@@ -1,0 +1,7 @@
+sf-hamilton
+sf-hamilton[visualization]
+feast
+feast[gcp]
+scikit-learn
+pandas
+numpy
