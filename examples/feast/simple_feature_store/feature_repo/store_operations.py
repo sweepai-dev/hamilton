@@ -1,7 +1,12 @@
 from datetime import datetime
 
 import pandas as pd
+<<<<<<< HEAD
 from feast import FeatureService, FeatureStore
+=======
+
+from feast import FeatureStore, FeatureService
+>>>>>>> cc4b84aa5c8cc218d78737cea64398195f3a0477
 from feast.data_source import PushMode, PushSource
 
 from hamilton.function_modifiers import config
@@ -30,7 +35,10 @@ def materialize_incremental(feature_store: FeatureStore, end_date: datetime) -> 
 
 
 def push(
-    feature_store: FeatureStore, push_source: str, event_df: pd.DataFrame, push_mode: PushMode | int
+    feature_store: FeatureStore,
+    push_source: str,
+    event_df: pd.DataFrame,
+    push_mode: PushMode | int
 ) -> bool:
     """Push features to a push source; updates all features associated with this source
     Has side-effect only; returns a boolean for lineage
@@ -75,7 +83,7 @@ def historical_features__batch(
 def online_features(
     feature_store: FeatureStore,
     entity_rows: list[dict],
-    online_features_: list[str] | FeatureService | PushSource,
+    online_features_: list[str] | FeatureService | PushSource 
 ) -> pd.DataFrame:
     """Fetch online features from a FeatureService source"""
     return feature_store.get_online_features(
