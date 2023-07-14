@@ -1,12 +1,7 @@
 from datetime import datetime
 
 import pandas as pd
-<<<<<<< HEAD
-from feast import FeatureService, FeatureStore
-=======
-
 from feast import FeatureStore, FeatureService
->>>>>>> cc4b84aa5c8cc218d78737cea64398195f3a0477
 from feast.data_source import PushMode, PushSource
 
 from hamilton.function_modifiers import config
