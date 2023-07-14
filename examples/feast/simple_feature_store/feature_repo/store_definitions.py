@@ -1,16 +1,7 @@
 from datetime import timedelta
 
 import pandas as pd
-
-from feast import (
-    Entity,
-    FeatureService,
-    FeatureView,
-    Field,
-    FileSource,
-    PushSource,
-    RequestSource,
-)
+from feast import Entity, FeatureService, FeatureView, Field, FileSource, PushSource, RequestSource
 from feast.on_demand_feature_view import OnDemandFeatureView
 from feast.types import Float32, Float64, Int64
 
@@ -43,19 +34,13 @@ def input_request_source() -> RequestSource:
     )
 
 
-
 def driver_stats_push_source(driver_hourly_stats_source: FileSource) -> PushSource:
     """Feast definition: push data to your store (offline, online, both)"""
-    return PushSource(
-        name="driver_stats_push",
-        batch_source=driver_hourly_stats_source
-    )
-
+    return PushSource(name="driver_stats_push", batch_source=driver_hourly_stats_source)
 
 
 def driver_hourly_stats_fv(
-    driver_entity: Entity,
-    driver_hourly_stats_source: FileSource
+    driver_entity: Entity, driver_hourly_stats_source: FileSource
 ) -> FeatureView:
     """Feast definition: feature view with hourly stats of driver"""
     return FeatureView(
@@ -93,7 +78,6 @@ def driver_hourly_stats_fresh_fv(
     )
 
 
-
 def _transformed_conv_rate_udf(df: pd.DataFrame) -> pd.DataFrame:
     """UDF to compute the adjusted conversion rate at request time"""
     out_df = pd.DataFrame()
@@ -103,8 +87,7 @@ def _transformed_conv_rate_udf(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def transformed_conv_rate(
-    driver_hourly_stats_fv: FeatureView,
-    input_request_source: RequestSource
+    driver_hourly_stats_fv: FeatureView, input_request_source: RequestSource
 ) -> OnDemandFeatureView:
     """Feast definition: feature view with features only available at request time"""
     return OnDemandFeatureView(
@@ -117,16 +100,15 @@ def transformed_conv_rate(
             driver_hourly_stats_fv,
             input_request_source,
         ],
-        udf=_transformed_conv_rate_udf
+        udf=_transformed_conv_rate_udf,
     )
 
 
 def transformed_conv_rate_fresh(
-    driver_hourly_stats_fresh_fv: FeatureView,
-    input_request_source: RequestSource
+    driver_hourly_stats_fresh_fv: FeatureView, input_request_source: RequestSource
 ) -> OnDemandFeatureView:
     """Feast definition: feature view with fresh data and
-     features only available at request time"""
+    features only available at request time"""
     return OnDemandFeatureView(
         name="transformed_conv_rate_fresh",
         schema=[
@@ -137,7 +119,7 @@ def transformed_conv_rate_fresh(
             driver_hourly_stats_fresh_fv,
             input_request_source,
         ],
-        udf=_transformed_conv_rate_udf
+        udf=_transformed_conv_rate_udf,
     )
 
 
@@ -149,9 +131,11 @@ def driver_activity_v1_fs(
     return FeatureService(
         name="driver_activity_v1",
         features=[
-            driver_hourly_stats_fv[["conv_rate"]],  # selecting a single column of driver_hourly_stats_fv
+            driver_hourly_stats_fv[
+                ["conv_rate"]
+            ],  # selecting a single column of driver_hourly_stats_fv
             transformed_conv_rate,
-        ]
+        ],
     )
 
 
@@ -165,7 +149,7 @@ def driver_activity_v2_fs(
         features=[
             driver_hourly_stats_fv,
             transformed_conv_rate,
-        ]
+        ],
     )
 
 
@@ -179,11 +163,11 @@ def driver_activity_v3_fs(
         features=[
             driver_hourly_stats_fresh_fv,
             transformed_conv_rate_fresh,
-        ]
+        ],
     )
 
 
-# call every function for 
+# call every function for
 @subdag(
     driver_entity,
     driver_hourly_stats_source,

@@ -1,28 +1,21 @@
 from datetime import datetime
 
-from hamilton import driver, base
-
 import store_definitions
 import store_operations
+from demo_inputs import ONLINE_ENTITY_ROWS  # noqa: F401
+from demo_inputs import ONLINE_FEATURES  # noqa: F401
+from demo_inputs import STREAM_EVENT_DF  # noqa: F401
+from demo_inputs import HISTORICAL_ENTITY_DF, HISTORICAL_FEATURES
 
-from demo_inputs import (
-    HISTORICAL_ENTITY_DF,
-    HISTORICAL_FEATURES,
-    ONLINE_ENTITY_ROWS,
-    ONLINE_FEATURES,
-    STREAM_EVENT_DF,
-)
+from hamilton import base, driver
 
 
 def main():
     dr = driver.Driver(
-        dict(
-            feast_repository_path=".",
-            feast_config={}
-        ),
+        dict(feast_repository_path=".", feast_config={}),
         store_operations,
         store_definitions,
-        adapter=base.SimplePythonGraphAdapter(base.DictResult())
+        adapter=base.SimplePythonGraphAdapter(base.DictResult()),
     )
 
     final_vars = [
@@ -35,7 +28,7 @@ def main():
         end_date=datetime.now(),
         entity_df=HISTORICAL_ENTITY_DF,
         historical_features_=HISTORICAL_FEATURES,
-        batch=True
+        batch=True,
     )
 
     out = dr.execute(final_vars=final_vars, inputs=inputs)
@@ -48,4 +41,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    

@@ -1,7 +1,7 @@
-sf-hamilton
-sf-hamilton[visualization]
 feast
 feast[gcp]
-scikit-learn
-pandas
 numpy
+pandas
+scikit-learn
+sf-hamilton
+sf-hamilton[visualization]

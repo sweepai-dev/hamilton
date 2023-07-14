@@ -2,7 +2,6 @@ from datetime import datetime
 
 import pandas as pd
 
-
 HISTORICAL_ENTITY_DF = pd.DataFrame.from_dict(
     {
         # entity's join key -> entity values
