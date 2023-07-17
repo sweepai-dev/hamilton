@@ -5,8 +5,6 @@ from feast import Entity, FeatureService, FeatureView, Field, FileSource, PushSo
 from feast.on_demand_feature_view import OnDemandFeatureView
 from feast.types import Float32, Float64, Int64
 
-from hamilton.function_modifiers import subdag
-
 
 def driver_entity() -> Entity:
     """Feast definition: driver entity"""
@@ -173,20 +171,6 @@ def driver_activity_v3_fs(
     )
 
 
-# call every function for 
-@subdag(
-    driver_entity,
-    driver_hourly_stats_source,
-    input_request_source,
-    driver_stats_push_source,
-    driver_hourly_stats_fv,
-    driver_hourly_stats_fresh_fv,
-    transformed_conv_rate,
-    transformed_conv_rate_fresh,
-    driver_activity_v1_fs,
-    driver_activity_v2_fs,
-    driver_activity_v3_fs,
-)
 def feast_objects(
     driver_entity: Entity,
     driver_hourly_stats_source: FileSource,
