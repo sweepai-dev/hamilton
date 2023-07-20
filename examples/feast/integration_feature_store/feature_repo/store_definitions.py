@@ -1,4 +1,5 @@
 from datetime import timedelta
+import inspect
 
 import pandas as pd
 from feast import Entity, FeatureService, FeatureView, Field, FileSource, PushSource, RequestSource
@@ -7,6 +8,41 @@ from feast.on_demand_feature_view import OnDemandFeatureView
 from feast.repo_contents import RepoContents
 from feast.types import Float32, Float64, Int64
 
+import feature_transformations
+
+# NEW INTEGRATION CODE
+
+def trips_stats_3h_source(trips_stats_3h_path: str) -> FileSource:
+    # assert that timestamp_field exist in the result dataframe of hamilton_func
+    # cannot be inferred from hamilton_func directly.
+    # otherwise, Feast will eventually throw an error anyways
+    transformation_func = feature_transformations.trips_stats_3h
+    return FileSource(
+        name=transformation_func.__name__,
+        path=trips_stats_3h_path,
+        timestamp_field="event_timestamp",
+        description=inspect.getdoc(transformation_func)
+    )
+
+
+def trips_stats_3h_push(trips_stats_3h_source: FileSource) -> PushSource:
+    return PushSource(
+        name=trips_stats_3h_source.name + "_fresh",
+        batch_source=trips_stats_3h_source
+    )
+
+
+def trips_stats_3h_fv(driver_entity: Entity, trips_stats_3h_source: FileSource) -> FeatureView:
+    return FeatureView(
+        name=trips_stats_3h_source.name,
+        source=trips_stats_3h_source,
+        entities=[driver_entity],
+        description=trips_stats_3h_source.description,
+        ttl=timedelta(days=365),
+        online=True,
+    )
+
+# BELOW IS CODE FROM THE OTHER EXAMPLES
 
 def driver_entity() -> Entity:
     """Feast definition: driver entity"""
@@ -37,7 +73,7 @@ def input_request_source() -> RequestSource:
 def driver_stats_push_source(driver_hourly_stats_source: FileSource) -> PushSource:
     """Feast definition: push data to your store (offline, online, both)"""
     return PushSource(
-        name="driver_stats_push",
+        name="driver_stats_fresh",
         batch_source=driver_hourly_stats_source
     )
 
@@ -48,7 +84,7 @@ def driver_hourly_stats_fv(
 ) -> FeatureView:
     """Feast definition: feature view with hourly stats of driver"""
     return FeatureView(
-        name="driver_hourly_stats",
+        name=driver_hourly_stats_source.name,
         entities=[driver_entity],
         ttl=timedelta(days=1),
         schema=[
@@ -68,7 +104,7 @@ def driver_hourly_stats_fresh_fv(
 ) -> FeatureView:
     """Feast definition: feature view with fresh hourly stats of driver from push source"""
     return FeatureView(
-        name="driver_hourly_stats_fresh",
+        name=driver_stats_push_source.name,
         entities=[driver_entity],
         ttl=timedelta(days=1),
         schema=[
@@ -171,7 +207,6 @@ def driver_activity_v3_fs(
     )
 
 
-
 def feast_entities(driver_entity: Entity) -> list[Entity]:
     """Collect all Feast entities"""
     return [driver_entity]
@@ -181,9 +216,17 @@ def feast_data_sources(
     driver_hourly_stats_source: FileSource,
     input_request_source: RequestSource,
     driver_stats_push_source: PushSource,
+    trips_stats_3h_source: FileSource,
+    trips_stats_3h_push: PushSource,
 ) -> list[DataSource]:
     """Collect all Feast data sources"""
-    return [driver_hourly_stats_source, input_request_source, driver_stats_push_source]
+    return [
+        driver_hourly_stats_source,
+        input_request_source,
+        driver_stats_push_source,
+        trips_stats_3h_source,
+        trips_stats_3h_push,
+    ]
 
 
 def feast_feature_services(
@@ -202,9 +245,10 @@ def feast_feature_services(
 def feast_feature_views(
     driver_hourly_stats_fv: FeatureView,
     driver_hourly_stats_fresh_fv: FeatureView,
+    trips_stats_3h_fv: FeatureView,
 ) -> list[FeatureView]:
     """Collect all Feast feature views"""
-    return [driver_hourly_stats_fv, driver_hourly_stats_fresh_fv]
+    return [driver_hourly_stats_fv, driver_hourly_stats_fresh_fv, trips_stats_3h_fv]
 
 
 def feast_on_demand_feature_views(
