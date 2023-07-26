@@ -115,7 +115,7 @@ class DriverCommon:
         error = None
         self.graph_modules = modules
         try:
-            self.graph = graph.FunctionGraph(*modules, config=config, adapter=adapter)
+            self.graph = graph.FunctionGraph.from_modules(*modules, config=config, adapter=adapter)
             self.adapter = adapter
         except Exception as e:
             error = telemetry.sanitize_error(*sys.exc_info())
@@ -741,9 +741,7 @@ class DriverV2(DriverCommon):
         overrides = overrides if overrides is not None else {}
         inputs = inputs if inputs is not None else {}
         nodes, user_nodes = self.graph.get_upstream_nodes(final_vars, inputs)
-        self.validate_inputs(
-            user_nodes, inputs, nodes
-        )
+        self.validate_inputs(user_nodes, inputs, nodes)
         (
             transform_nodes_required_for_execution,
             user_defined_nodes_required_for_execution,

@@ -198,15 +198,14 @@ class FunctionGraph(object):
 
     def __init__(
         self,
-        *modules: ModuleType,
+        nodes: Dict[str, Node],
         config: Dict[str, Any],
         adapter: base.HamiltonGraphAdapter = None,
-        nodes: List[Node] = None,
     ):
-        """Initializes a function graph by crawling through modules. Function graph must have a config,
-        as the config could determine the shape of the graph.
+        """Initializes a function graph from specified nodes. See note on `from_modules` if you
+        start getting an error here because you use an internal API.
 
-        :param modules: Modules to crawl for functions
+        :param nodes: Nodes, taken from the output of create_function_graph.
         :param config: this is configuration and/or initial data.
         :param adapter: adapts function building and graph execution for different contexts.
         """
@@ -214,12 +213,27 @@ class FunctionGraph(object):
             adapter = base.SimplePythonDataFrameGraphAdapter()
 
         self._config = config
-        if nodes:
-            if modules:
-                raise ValueError("Cannot specify both modules and nodes")
-
-        self.nodes = create_function_graph(*modules, config=self._config, adapter=adapter)
+        self.nodes = nodes
         self.adapter = adapter
+
+    @staticmethod
+    def from_modules(
+        *modules: ModuleType, config: Dict[str, Any], adapter: base.HamiltonGraphAdapter = None
+    ):
+        """Initializes a function graph from the specified modules. Note that this was the old
+        way we constructed FunctionGraph -- this is not a public-facing API, so we replaced it
+        with a constructor that takes in nodes directly. If you hacked in something using
+        `FunctionGraph`, then you should be able to replace it with `FunctionGraph.from_modules`
+        and it will work.
+
+        :param modules: Modules to crawl, resolve to nodes
+        :param config: Config to use for node resolution
+        :param adapter: Adapter to use for node resolution, edge creation
+        :return: a function graph.
+        """
+
+        nodes = create_function_graph(*modules, config=config, adapter=adapter)
+        return FunctionGraph(nodes, config, adapter)
 
     @property
     def config(self):
