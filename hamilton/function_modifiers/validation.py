@@ -130,6 +130,11 @@ class check_output_custom(BaseDataValidationDecorator):
         self.validators = list(validators)
 
     def get_validators(self, node_to_validate: node.Node) -> List[dq_base.DataValidator]:
+        """Returns the list of custom validators passed to the check_output_custom decorator.
+
+        :param node_to_validate: Node to which the output of the validator will apply
+        :return: A list of custom validators to apply to the node.
+        """
         return self.validators
 
 

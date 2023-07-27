@@ -56,46 +56,62 @@ def test_check_output_node_transform():
 
 
 def test_check_output_custom_node_transform():
+    # Create a check_output_custom decorator with two custom validators
     decorator = check_output_custom(
         SampleDataValidator2(dataset_length=1, importance="warn"),
         SampleDataValidator3(dtype=np.int64, importance="warn"),
     )
 
+    # Define a function to apply the decorator to
     def fn(input: pd.Series) -> pd.Series:
         return input
 
+    # Create a node from the function and transform it using the decorator
     node_ = node.Node.from_fn(fn)
     subdag = decorator.transform_node(node_, config={}, fn=fn)
+
+    # Check the number of nodes in the transformed subDAG
     assert 4 == len(subdag)
+
+    # Create a dictionary of the nodes in the subDAG
     subdag_as_dict = {node_.name: node_ for node_ in subdag}
+
+    # Check the names of the nodes in the subDAG
     assert sorted(subdag_as_dict.keys()) == [
         "fn",
         "fn_dummy_data_validator_2",
         "fn_dummy_data_validator_3",
         "fn_raw",
     ]
-    # TODO -- change when we change the naming scheme
+
+    # Check the input types of the raw node
     assert subdag_as_dict["fn_raw"].input_types["input"][1] == DependencyType.REQUIRED
-    assert 3 == len(
-        subdag_as_dict["fn"].input_types
-    )  # Three dependencies -- the two with DQ + the original
+
+    # Check the number of dependencies of the final node
+    assert 3 == len(subdag_as_dict["fn"].input_types)
+
+    # Get the data validators from the subDAG
     data_validators = [
         value
         for value in subdag_as_dict.values()
         if value.tags.get("hamilton.data_quality.contains_dq_results", False)
     ]
-    assert len(data_validators) == 2  # One for each validator
+
+    # Check the number of data validators
+    assert len(data_validators) == 2
+
+    # Check the tags of the first data validator
     first_validator, _ = data_validators
     assert (
         IS_DATA_VALIDATOR_TAG in first_validator.tags
         and first_validator.tags[IS_DATA_VALIDATOR_TAG] is True
-    )  # Validates that all the required tags are included
+    )
     assert (
         DATA_VALIDATOR_ORIGINAL_OUTPUT_TAG in first_validator.tags
         and first_validator.tags[DATA_VALIDATOR_ORIGINAL_OUTPUT_TAG] == "fn"
     )
 
-    # The final function should take in everything but only use the raw results
+    # Check the callable of the final node
     assert (
         subdag_as_dict["fn"].callable(
             fn_raw="test",
