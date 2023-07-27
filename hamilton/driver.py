@@ -15,6 +15,7 @@ from typing import Any, Callable, Collection, Dict, List, Optional, Set, Tuple, 
 import pandas as pd
 
 from hamilton.execution import executors, graph_functions, grouping, state
+from hamilton.io import materialization
 
 SLACK_ERROR_MESSAGE = (
     "-------------------------------------------------------------------\n"
@@ -165,7 +166,8 @@ class DriverCommon:
                 if logger.isEnabledFor(logging.DEBUG):
                     logger.debug(f"Error caught in processing telemetry: {e}")
 
-    def _node_is_required_by_anything(self, node_: node.Node, node_set: Set[node.Node]) -> bool:
+    @staticmethod
+    def _node_is_required_by_anything(node_: node.Node, node_set: Set[node.Node]) -> bool:
         """Checks dependencies on this node and determines if at least one requires it.
 
         Nodes can be optionally depended upon, i.e. the function parameter has a default value. We want to check that
@@ -184,8 +186,10 @@ class DriverCommon:
                 return True
         return required
 
-    def validate_inputs(
-        self,
+    @staticmethod
+    def _validate_inputs(
+        fn_graph: graph.FunctionGraph,
+        adapter: base.HamiltonGraphAdapter,
         user_nodes: Collection[node.Node],
         inputs: typing.Optional[Dict[str, Any]] = None,
         nodes_set: Collection[node.Node] = None,
@@ -201,17 +205,17 @@ class DriverCommon:
         if inputs is None:
             inputs = {}
         if nodes_set is None:
-            nodes_set = set(self.graph.nodes.values())
-        (all_inputs,) = (graph_functions.combine_config_and_inputs(self.graph.config, inputs),)
+            nodes_set = set(fn_graph.nodes.values())
+        (all_inputs,) = (graph_functions.combine_config_and_inputs(fn_graph.config, inputs),)
         errors = []
         for user_node in user_nodes:
             if user_node.name not in all_inputs:
-                if self._node_is_required_by_anything(user_node, nodes_set):
+                if DriverCommon._node_is_required_by_anything(user_node, nodes_set):
                     errors.append(
                         f"Error: Required input {user_node.name} not provided "
                         f"for nodes: {[node.name for node in user_node.depended_on_by]}."
                     )
-            elif all_inputs[user_node.name] is not None and not self.adapter.check_input_type(
+            elif all_inputs[user_node.name] is not None and not adapter.check_input_type(
                 user_node.type, all_inputs[user_node.name]
             ):
                 errors.append(
@@ -366,7 +370,7 @@ class DriverCommon:
         """
         _final_vars = self._create_final_vars(final_vars)
         nodes, user_nodes = self.graph.get_upstream_nodes(_final_vars, inputs)
-        self.validate_inputs(user_nodes, inputs, nodes)
+        DriverCommon._validate_inputs(self.graph, self.adapter, user_nodes, inputs, nodes)
         node_modifiers = {fv: {graph.VisualizationNodeModifiers.IS_OUTPUT} for fv in _final_vars}
         for user_node in user_nodes:
             if user_node.name not in node_modifiers:
@@ -670,8 +674,8 @@ class Driver(DriverCommon):
         :return:
         """
         nodes, user_nodes = self.graph.get_upstream_nodes(final_vars, inputs)
-        self.validate_inputs(
-            user_nodes, inputs, nodes
+        self._validate_inputs(
+            self.graph, self.adapter, user_nodes, inputs, nodes
         )  # TODO -- validate within the function graph itself
         if display_graph:  # deprecated flow.
             logger.warning(
@@ -722,6 +726,52 @@ class DriverV2(DriverCommon):
         self.grouping_strategy = grouping_strategy
         self.result_builder = result_builder if result_builder is not None else base.DictResult()
 
+    @staticmethod
+    def _execute_helper(
+        fn_graph: graph.FunctionGraph,
+        adapter: base.HamiltonGraphAdapter,
+        result_builder: base.ResultMixin,
+        execution_manager: executors.ExecutionManager,
+        grouping_strategy: grouping.GroupingStrategy,
+        final_vars: List[str],
+        overrides: Dict[str, Any] = None,
+        inputs: Dict[str, Any] = None,
+    ):
+        overrides = overrides if overrides is not None else {}
+        inputs = inputs if inputs is not None else {}
+        nodes, user_nodes = fn_graph.get_upstream_nodes(final_vars, inputs)
+        DriverCommon._validate_inputs(fn_graph, adapter, user_nodes, inputs, nodes)
+        (
+            transform_nodes_required_for_execution,
+            user_defined_nodes_required_for_execution,
+        ) = fn_graph.get_upstream_nodes(
+            final_vars, runtime_inputs=inputs, runtime_overrides=overrides
+        )
+
+        all_nodes_required_for_execution = list(
+            set(transform_nodes_required_for_execution).union(
+                user_defined_nodes_required_for_execution
+            )
+        )
+        grouped_nodes = grouping_strategy.group_nodes(
+            all_nodes_required_for_execution
+        )  # pure function transform
+        # Instantiate a result cache so we can use later
+        # Pass in inputs so we can pre-populate the results cache
+        prehydrated_results = {**overrides, **inputs}
+        results_cache = state.DictBasedResultCache(prehydrated_results)
+        # Create tasks from the grouped nodes, filtering/pruning as we go
+        tasks = grouping.create_task_plan(grouped_nodes, final_vars, overrides, [fn_graph.adapter])
+        # Create a task graph and execution state
+        execution_state = state.ExecutionState(tasks, results_cache)  # Stateful storage for the DAG
+        # Run the graph (Stateless while loop for executing the DAG)
+        graph_runner = executors.GraphRunner(execution_state, execution_manager)
+        # Blocking call to run through until completion
+        graph_runner.run_until_complete()
+        # Read the final variables from the result cache
+        raw_result = results_cache.read(final_vars)
+        return result_builder.build_result(**raw_result)
+
     def execute(
         self,
         final_vars: List[Union[str, Callable, Variable]],
@@ -738,42 +788,55 @@ class DriverV2(DriverCommon):
         :return: A Dictionary containing the restults of the DAG.
         """
 
-        overrides = overrides if overrides is not None else {}
-        inputs = inputs if inputs is not None else {}
-        nodes, user_nodes = self.graph.get_upstream_nodes(final_vars, inputs)
-        self.validate_inputs(user_nodes, inputs, nodes)
-        (
-            transform_nodes_required_for_execution,
-            user_defined_nodes_required_for_execution,
-        ) = self.graph.get_upstream_nodes(
-            final_vars, runtime_inputs=inputs, runtime_overrides=overrides
+        return self._execute_helper(
+            self.graph,
+            self.adapter,
+            self.result_builder,
+            self.execution_manager,
+            self.grouping_strategy,
+            final_vars,
+            overrides,
+            inputs,
         )
 
-        all_nodes_required_for_execution = list(
-            set(transform_nodes_required_for_execution).union(
-                user_defined_nodes_required_for_execution
-            )
+    def materialize(
+        self,
+        *materializers: materialization.MaterializerFactory,
+        additional_vars: List[Union[str, Callable, Variable]],
+        overrides: Dict[str, Any] = None,
+        inputs: Dict[str, Any] = None,
+    ) -> Tuple[Any, Dict[str, Any]]:
+        """Executes and materializes with ad-hoc materializers.
+        This does the following:
+        1. Creates a new graph, appending the desired materialization nodes
+        2. Runs the graph with the materialization nodes outputted, as well as any additional
+        nodes requested (which can be empty)
+        3. Returns a Tuple[Result, Materialization_metadata]
+
+        :param materializers:
+        :param additional_vars:
+        :param overrides:
+        :param inputs:
+        :return:
+        """
+        function_graph = materialization.modify_graph(self.graph, materializers)
+        final_vars = self._create_final_vars(additional_vars)
+        materializer_vars = [materializer.name for materializer in materializers]
+        raw_results = self._execute_helper(
+            fn_graph=function_graph,
+            adapter=self.adapter,
+            result_builder=base.DictResult(),
+            execution_manager=self.execution_manager,
+            grouping_strategy=self.grouping_strategy,
+            final_vars=[final_vars + materializer_vars],
+            overrides=overrides,
+            inputs=inputs,
         )
-        grouped_nodes = self.grouping_strategy.group_nodes(
-            all_nodes_required_for_execution
-        )  # pure function transform
-        # Instantiate a result cache so we can use later
-        # Pass in inputs so we can pre-populate the results cache
-        prehydrated_results = {**overrides, **inputs}
-        results_cache = state.DictBasedResultCache(prehydrated_results)
-        # Create tasks from the grouped nodes, filtering/pruning as we go
-        tasks = grouping.create_task_plan(
-            grouped_nodes, final_vars, overrides, [self.graph.adapter]
+        materialization_output = {key: raw_results[key] for key in materializer_vars}
+        raw_results_output = self.result_builder.build_result(
+            **{key: raw_results[key] for key in final_vars}
         )
-        # Create a task graph and execution state
-        execution_state = state.ExecutionState(tasks, results_cache)  # Stateful storage for the DAG
-        # Run the graph (Stateless while loop for executing the DAG)
-        graph_runner = executors.GraphRunner(execution_state, self.execution_manager)
-        # Blocking call to run through until completion
-        graph_runner.run_until_complete()
-        # Read the final variables from the result cache
-        raw_result = results_cache.read(final_vars)
-        return self.result_builder.build_result(**raw_result)
+        return raw_results_output, materialization_output
 
 
 class Builder:

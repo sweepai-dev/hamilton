@@ -235,6 +235,20 @@ class FunctionGraph(object):
         nodes = create_function_graph(*modules, config=config, adapter=adapter)
         return FunctionGraph(nodes, config, adapter)
 
+    def with_nodes(self, nodes: Dict[str, Node]) -> "FunctionGraph":
+        """Creates a new function graph with the additional specified nodes.
+        Note that if there is a duplication in the node definitions,
+        it will error out.
+
+        :param nodes: Nodes to add to the FunctionGraph
+        :return: a new function graph.
+        """
+        # first check if there are any duplicates
+        duplicates = set(self.nodes.keys()).intersection(set(nodes.keys()))
+        if duplicates:
+            raise ValueError(f"Duplicate node names found: {duplicates}")
+        return FunctionGraph({**self.nodes, **nodes}, self.config, self.adapter)
+
     @property
     def config(self):
         return self._config
